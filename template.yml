@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  Minimal SAM template for a Python 3.11 Lambda that exposes HTTP endpoints.
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 10
+    MemorySize: 512
+    Environment:
+      Variables:
+        STAGE: dev
+
+Resources:
+  MyApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: my-service-function-${{Stage}}
+      Handler: lambda_function.lambda_handler                      # <-- change to "<module>.<callable>"
+      CodeUri: .                             # <-- path to code (zip or folder)
+      Runtime: python3.11
+      Architectures:
+        - arm64
+      Policies:                                 # minimal runtime permissions; tighten for prod
+        - AWSLambdaBasicExecutionRole
+      Events:
+        ApiRoot:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  ServiceApi:
+    Description: "API Gateway endpoint"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
