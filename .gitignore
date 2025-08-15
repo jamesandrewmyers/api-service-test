@@ -35,6 +35,11 @@ MANIFEST
 .env
 .env.local
 
+# Vim swap files
+*.swp
+*.swo
+*~
+
 # Logs
 *.log
 
