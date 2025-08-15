@@ -11,6 +11,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     AWS Lambda handler for API service endpoints
     """
     try:
+        logger.info("EVENT: %s", event)
         http_method = event.get('httpMethod', '')
         path = event.get('path', '')
         
