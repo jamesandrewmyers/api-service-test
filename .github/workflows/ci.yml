@@ -1,0 +1,16 @@
+name: ci
+on:
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: jamesandrewmyers/aws-devops/.github/workflows/python-lambda-ci.yml@v1.0.0
+    with:
+      app-dir: '.'
+      req-file: 'requirements.txt'
+      python-version: '3.11'
+      run-tests: false
