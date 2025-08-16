@@ -1,0 +1,23 @@
+name: oidc-smoke
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  assume:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS creds via OIDC (assume role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::444101352833:role/gha-cdk-deploy-dev
+          aws-region: us-west-2
+
+      - name: whoami
+        run: aws sts get-caller-identity --output json
