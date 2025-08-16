@@ -8,7 +8,7 @@ logger.setLevel(logging.INFO)
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    AWS Lambda handler for API service endpoints
+    AWS Lambda handler for API service endpoints - test change text
     """
     try:
         logger.info("EVENT: %s", event)
