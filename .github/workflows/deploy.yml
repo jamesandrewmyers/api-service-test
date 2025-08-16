@@ -60,33 +60,42 @@ jobs:
           echo "Selected run_id=$run_id"
           echo "run_id=$run_id" >> $GITHUB_OUTPUT
 
-      - name: List artifacts for the selected run and download via API
+      - name: List artifacts for the selected run and download via API (robust)
         id: download_art
         run: |
           set -euo pipefail
-          run_id="${{ steps.find_run.outputs.run_id }}"
           repo="${GITHUB_REPOSITORY}"
           name="lambda-bundle"
+          run_id="${{ steps.find_run.outputs.run_id }}"
+          ARTIFACTS_JSON="/tmp/artifacts.json"
 
           api="https://api.github.com/repos/$repo/actions/runs/$run_id/artifacts"
           echo "Listing artifacts for run $run_id via $api"
 
-          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" -o /tmp/artifacts.json || true
+          # fetch JSON
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" -o "$ARTIFACTS_JSON" || true
 
-          echo "---- artifacts.json (first 200 chars) ----"
-          head -c 200 /tmp/artifacts.json || true
-          echo; echo "-----------------------------------------"
+          echo "---- artifacts.json (first 300 chars) ----"
+          head -c 300 "$ARTIFACTS_JSON" || true
+          echo
+          echo "-----------------------------------------"
 
-          first_char=$(sed -n '1p' /tmp/artifacts.json | tr -d '[:space:]' | cut -c1 || true)
+          # Ensure file exists and is non-empty
+          if [ ! -s "$ARTIFACTS_JSON" ]; then
+            echo "ERROR: artifacts JSON is empty or missing for run $run_id" >&2
+            exit 1
+          fi
 
-          if [ "$first_char" = "[" ]; then
-            echo "Detected top-level ARRAY shape"
-            jq -r '.[] | "\(.id) \(.name) \(.size_in_bytes) \(.archive_download_url)"' /tmp/artifacts.json > /tmp/artifacts.list || true
-            archive_url=$(jq -r --arg NAME "$name" '.[] | select(.name==$NAME) | .archive_download_url' /tmp/artifacts.json || true)
+          # try object shape first, then array shape
+          archive_url=""
+          if jq -e 'has("artifacts")' "$ARTIFACTS_JSON" >/dev/null 2>&1; then
+            echo "Detected object shape with .artifacts"
+            archive_url=$(jq -r --arg NAME "$name" '.artifacts[] | select(.name==$NAME) | .archive_download_url' "$ARTIFACTS_JSON" || true)
+            jq -r '.artifacts[] | "\(.id) \(.name) \(.size_in_bytes) \(.archive_download_url)"' "$ARTIFACTS_JSON" > /tmp/artifacts.list || true
           else
-            echo "Detected top-level OBJECT shape (expected .artifacts)"
-            jq -r '.artifacts[] | "\(.id) \(.name) \(.size_in_bytes) \(.archive_download_url)"' /tmp/artifacts.json > /tmp/artifacts.list || true
-            archive_url=$(jq -r --arg NAME "$name" '.artifacts[] | select(.name==$NAME) | .archive_download_url' /tmp.artifacts.json || true)
+            echo "Detected top-level array shape or unexpected structure"
+            archive_url=$(jq -r --arg NAME "$name" '.[] | select(.name==$NAME) | .archive_download_url' "$ARTIFACTS_JSON" || true)
+            jq -r '.[] | "\(.id) \(.name) \(.size_in_bytes) \(.archive_download_url)"' "$ARTIFACTS_JSON" > /tmp/artifacts.list || true
           fi
 
           if [ -s /tmp/artifacts.list ]; then
@@ -101,12 +110,20 @@ jobs:
             exit 1
           fi
 
-          echo "Found archive url for $name; downloading..."
+          echo "Found archive url for $name; downloading via direct artifact URL..."
           mkdir -p ./artifact
+          # request binary
           curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/octet-stream" "$archive_url" -o ./artifact/artifact.zip
           echo "Downloaded to ./artifact/artifact.zip (size: $(stat -c%s ./artifact/artifact.zip 2>/dev/null || echo unknown))"
+
+          # extract the downloaded archive and handle nested bundle.zip if present
           unzip -o ./artifact/artifact.zip -d ./artifact >/dev/null || true
-          echo "Listing ./artifact:"
+          if [ -f ./artifact/bundle.zip ]; then
+            mkdir -p ./artifact/inner && unzip -o ./artifact/bundle.zip -d ./artifact/inner >/dev/null || true
+            echo "Nested bundle.zip extracted to ./artifact/inner"
+          fi
+
+          echo "Listing ./artifact (post-extract):"
           find ./artifact -maxdepth 3 -type f -printf "%P\n"
           echo "downloaded=ok" >> $GITHUB_OUTPUT
 
