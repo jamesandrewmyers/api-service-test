@@ -1,5 +1,12 @@
 name: ci
 on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or ref to run against (defaults to current branch)'
+        required: false
+        default: ''
+
   pull_request:
     branches: [ master ]
 
