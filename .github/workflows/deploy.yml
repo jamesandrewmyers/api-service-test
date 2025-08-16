@@ -1,0 +1,90 @@
+name: deploy
+on:
+  workflow_dispatch:
+    inputs:
+      pick_build:
+        description: 'Which build to deploy'
+        required: true
+        type: choice
+        options:
+          - latest
+          - latest-success
+          - by-run-id
+        default: latest
+      run_id:
+        description: 'If you chose by-run-id, paste the Actions run id here'
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  fetch-artifact:
+    runs-on: ubuntu-latest
+    outputs:
+      selected_run_id: ${{ steps.find_run.outputs.run_id }}
+    steps:
+      - name: Determine run id to use
+        id: find_run
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          branch="master"   # change if needed
+          pick="${{ github.event.inputs.pick_build }}"
+          provided_run="${{ github.event.inputs.run_id || '' }}"
+
+          if [ "$pick" = "by-run-id" ]; then
+            if [ -z "$provided_run" ]; then
+              echo "ERROR: pick_build=by-run-id but no run_id provided" >&2
+              exit 1
+            fi
+            echo "run_id=$provided_run" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # pick is latest or latest-success; query workflow runs for ci.yml
+          api="https://api.github.com/repos/$repo/actions/workflows/ci.yml/runs?branch=$branch&per_page=20"
+          echo "querying $api"
+          # choose the first successful run; fallback to first run if needed
+          run_id=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" \
+            | jq -r '.workflow_runs[] | select(.conclusion=="success") | .id' | head -n1)
+
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            # fallback to any run (requested/running/completed)
+            run_id=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" \
+              | jq -r '.workflow_runs[0].id' || true)
+          fi
+
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            echo "No runs found for workflow ci.yml on branch $branch" >&2
+            exit 1
+          fi
+
+          echo "Selected run_id=$run_id"
+          echo "run_id=$run_id" >> $GITHUB_OUTPUT
+
+      - name: Download lambda-bundle from selected run
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-bundle
+          path: ./artifact
+          run-id: ${{ steps.find_run.outputs.run_id }}
+
+      - name: Re-upload artifact into this workflow (so deploy job can access it)
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-bundle
+          path: ./artifact/*
+
+  deploy:
+    needs: fetch-artifact
+    uses: jamesandrewmyers/aws-devops/.github/workflows/cdk-deploy-env.yml@v1.0.0
+    with:
+      artifact-name: 'lambda-bundle'
+      cdk-dir: 'cdk'
+      stack: 'api-service-test-dev'
+      aws-account: '444101352833'
+      aws-region: 'us-west-2'
+      role-to-assume: 'arn:aws:iam::444101352833:role/gha-cdk-deploy-dev'
