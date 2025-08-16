@@ -44,16 +44,12 @@ jobs:
             exit 0
           fi
 
-          api="https://api.github.com/repos/$repo/actions/workflows/ci.yml/runs?branch=$branch&per_page=20"
+          api="https://api.github.com/repos/$repo/actions/workflows/ci.yml/runs?branch=$branch&per_page=50"
           echo "querying $api"
-          # choose the first successful run; fallback to first run if needed
-          run_id=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" \
-            | jq -r '.workflow_runs[] | select(.conclusion=="success") | .id' | head -n1)
+          run_id=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" | jq -r '.workflow_runs[] | select(.conclusion=="success") | .id' | head -n1)
 
           if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
-            # fallback to any run (requested/running/completed)
-            run_id=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" \
-              | jq -r '.workflow_runs[0].id' || true)
+            run_id=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" | jq -r '.workflow_runs[0].id' || true)
           fi
 
           if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
@@ -73,17 +69,32 @@ jobs:
           name="lambda-bundle"
 
           api="https://api.github.com/repos/$repo/actions/runs/$run_id/artifacts"
-          echo "Listing artifacts for run $run_id..."
-          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" | jq '.artifacts' > /tmp/artifacts.json || true
-          jq -r '.artifacts[] | "\(.id) \(.name) \(.size_in_bytes) \(.archive_download_url)"' /tmp/artifacts.json > /tmp/artifacts.list || true
+          echo "Listing artifacts for run $run_id via $api"
+
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" -o /tmp/artifacts.json || true
+
+          echo "---- artifacts.json (first 200 chars) ----"
+          head -c 200 /tmp/artifacts.json || true
+          echo; echo "-----------------------------------------"
+
+          first_char=$(sed -n '1p' /tmp/artifacts.json | tr -d '[:space:]' | cut -c1 || true)
+
+          if [ "$first_char" = "[" ]; then
+            echo "Detected top-level ARRAY shape"
+            jq -r '.[] | "\(.id) \(.name) \(.size_in_bytes) \(.archive_download_url)"' /tmp/artifacts.json > /tmp/artifacts.list || true
+            archive_url=$(jq -r --arg NAME "$name" '.[] | select(.name==$NAME) | .archive_download_url' /tmp/artifacts.json || true)
+          else
+            echo "Detected top-level OBJECT shape (expected .artifacts)"
+            jq -r '.artifacts[] | "\(.id) \(.name) \(.size_in_bytes) \(.archive_download_url)"' /tmp/artifacts.json > /tmp/artifacts.list || true
+            archive_url=$(jq -r --arg NAME "$name" '.artifacts[] | select(.name==$NAME) | .archive_download_url' /tmp.artifacts.json || true)
+          fi
+
           if [ -s /tmp/artifacts.list ]; then
             echo "Artifacts found:"
             cat /tmp/artifacts.list
           else
-            echo "No artifacts listed for run $run_id" >&2
+            echo "No artifacts listed for run $run_id"
           fi
-
-          archive_url=$(jq -r --arg NAME "$name" '.artifacts[] | select(.name==$NAME) | .archive_download_url' /tmp/artifacts.json || true)
 
           if [ -z "$archive_url" ] || [ "$archive_url" = "null" ]; then
             echo "ERROR: artifact named '$name' not found for run $run_id" >&2
