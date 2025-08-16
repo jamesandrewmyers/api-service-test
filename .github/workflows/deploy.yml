@@ -44,7 +44,6 @@ jobs:
             exit 0
           fi
 
-          # pick is latest or latest-success; query workflow runs for ci.yml
           api="https://api.github.com/repos/$repo/actions/workflows/ci.yml/runs?branch=$branch&per_page=20"
           echo "querying $api"
           # choose the first successful run; fallback to first run if needed
@@ -65,12 +64,40 @@ jobs:
           echo "Selected run_id=$run_id"
           echo "run_id=$run_id" >> $GITHUB_OUTPUT
 
-      - name: Download lambda-bundle from selected run
-        uses: actions/download-artifact@v4
-        with:
-          name: lambda-bundle
-          path: ./artifact
-          run-id: ${{ steps.find_run.outputs.run_id }}
+      - name: List artifacts for the selected run and download via API
+        id: download_art
+        run: |
+          set -euo pipefail
+          run_id="${{ steps.find_run.outputs.run_id }}"
+          repo="${GITHUB_REPOSITORY}"
+          name="lambda-bundle"
+
+          api="https://api.github.com/repos/$repo/actions/runs/$run_id/artifacts"
+          echo "Listing artifacts for run $run_id..."
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$api" | jq '.artifacts' > /tmp/artifacts.json || true
+          jq -r '.artifacts[] | "\(.id) \(.name) \(.size_in_bytes) \(.archive_download_url)"' /tmp/artifacts.json > /tmp/artifacts.list || true
+          if [ -s /tmp/artifacts.list ]; then
+            echo "Artifacts found:"
+            cat /tmp/artifacts.list
+          else
+            echo "No artifacts listed for run $run_id" >&2
+          fi
+
+          archive_url=$(jq -r --arg NAME "$name" '.artifacts[] | select(.name==$NAME) | .archive_download_url' /tmp/artifacts.json || true)
+
+          if [ -z "$archive_url" ] || [ "$archive_url" = "null" ]; then
+            echo "ERROR: artifact named '$name' not found for run $run_id" >&2
+            exit 1
+          fi
+
+          echo "Found archive url for $name; downloading..."
+          mkdir -p ./artifact
+          curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/octet-stream" "$archive_url" -o ./artifact/artifact.zip
+          echo "Downloaded to ./artifact/artifact.zip (size: $(stat -c%s ./artifact/artifact.zip 2>/dev/null || echo unknown))"
+          unzip -o ./artifact/artifact.zip -d ./artifact >/dev/null || true
+          echo "Listing ./artifact:"
+          find ./artifact -maxdepth 3 -type f -printf "%P\n"
+          echo "downloaded=ok" >> $GITHUB_OUTPUT
 
       - name: Re-upload artifact into this workflow (so deploy job can access it)
         uses: actions/upload-artifact@v4
