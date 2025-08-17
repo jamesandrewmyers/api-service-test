@@ -54,7 +54,7 @@ jobs:
       aws-account: '444101352833'
       aws-region: 'us-west-2'
       # prefer inputs.role-to-assume if you want, otherwise keep empty and pass secret below
-      role-to-assume: ''
+      role-to-assume: 'arn:aws:iam::444101352833:role/gha-cdk-deploy-dev'
       artifact-run-id: ${{ needs.pick-run.outputs.picked-run-id }}
     secrets:
       # the reusable workflow declared this secret; supply it from repo secrets
