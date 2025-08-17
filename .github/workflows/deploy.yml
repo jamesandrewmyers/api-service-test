@@ -113,7 +113,7 @@ jobs:
           echo "Found archive url for $name; downloading via direct artifact URL..."
           mkdir -p ./artifact
           # request binary
-          curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/octet-stream" "$archive_url" -o ./artifact/artifact.zip
+          curl -sSL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$archive_url" -o ./artifact/artifact.zip
           echo "Downloaded to ./artifact/artifact.zip (size: $(stat -c%s ./artifact/artifact.zip 2>/dev/null || echo unknown))"
 
           # extract the downloaded archive and handle nested bundle.zip if present
