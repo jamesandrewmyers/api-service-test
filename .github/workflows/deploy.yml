@@ -135,7 +135,7 @@ jobs:
 
   deploy:
     needs: fetch-artifact
-    uses: jamesandrewmyers/aws-devops/.github/workflows/cdk-deploy-env.yml
+    uses: jamesandrewmyers/aws-devops/.github/workflows/cdk-deploy-env.yml@master
     with:
       artifact-name: 'lambda-bundle'
       cdk-dir: 'cdk'
