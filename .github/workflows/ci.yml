@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build:
-    uses: jamesandrewmyers/aws-devops/.github/workflows/python-lambda-ci.yml@v1.0.0
+    uses: jamesandrewmyers/aws-devops/.github/workflows/python-lambda-ci.yml@master
     with:
       app-dir: '.'
       req-file: 'requirements.txt'
