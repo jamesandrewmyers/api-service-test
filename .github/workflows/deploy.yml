@@ -55,8 +55,8 @@ jobs:
 
   deploy:
     needs: fetch-artifact
-    # Use the centralized reusable workflow (point at main to use tip-of-branch; change if you want pinned tag)
-    uses: jamesandrewmyers/aws-devops/.github/workflows/cdk-deploy-env.yml@main
+    # Use the centralized reusable workflow (point at master to use tip-of-branch; change if you want pinned tag)
+    uses: jamesandrewmyers/aws-devops/.github/workflows/cdk-deploy-env.yml@master
     with:
       artifact-name: 'lambda-bundle'
       # <-- CHANGE: point to the central CDK app checked out inside the reusable workflow
