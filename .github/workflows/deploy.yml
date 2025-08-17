@@ -22,51 +22,40 @@ on:
         type: string
 
 jobs:
-  # fetch-artifact job unchanged (keeps your existing build-selection logic)
-  fetch-artifact:
+  pick-run:
+    name: pick-run
     runs-on: ubuntu-latest
     outputs:
-      picked-run-id: ${{ steps.pick-run.outputs.picked_run_id }}
+      picked-run-id: ${{ steps.emit.outputs.picked_run_id }}
     steps:
-      - name: Set up job
-        run: echo "fetch-artifact step placeholder (keeps your existing selection logic)"
-
-      - name: Determine run id to use
-        id: pick-run
+      - name: Decide which run to deploy (minimal logic)
+        id: emit
         run: |
-          # this should implement your pick_build logic and emit picked_run_id
-          # for the minimal change here we re-use input run_id when by-run-id was selected,
-          # otherwise use github.event.inputs.run_id or some lookup to find latest.
-          if [ "${{ github.event.inputs.pick_build }}" = "by-run-id" ]; then
-            echo "::set-output name=picked_run_id::${{ github.event.inputs.run_id }}"
+          set -euo pipefail
+          PICK="${{ github.event.inputs.pick_build }}"
+          INPUT_RUN="${{ github.event.inputs.run_id }}"
+          # If user chose by-run-id, return that run id. Otherwise return empty to indicate "use current run"
+          if [ "$PICK" = "by-run-id" ] && [ -n "$INPUT_RUN" ]; then
+            echo "::set-output name=picked_run_id::$INPUT_RUN"
           else
-            # fallback: use provided run_id if given, otherwise use the current run id
-            echo "::set-output name=picked_run_id::${{ github.event.inputs.run_id }}"
+            # empty indicates "artifact live in current run" and central workflow should use actions/download-artifact fallback
+            echo "::set-output name=picked_run_id::"
           fi
 
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          # This downloads the artifact from the run selected above (same-run vs other-run logic omitted for brevity)
-          name: lambda-bundle
-          path: ./artifact
-          # If you need to download from a different run, switch to the API download approach.
-          # For now this step will work if the fetch-artifact job created the artifact in the same run.
-
   deploy:
-    needs: fetch-artifact
-    # Use the centralized reusable workflow (point at master to use tip-of-branch; change if you want pinned tag)
+    name: deploy (call central)
+    needs: pick-run
     uses: jamesandrewmyers/aws-devops/.github/workflows/cdk-deploy-env.yml@master
     with:
       artifact-name: 'lambda-bundle'
-      # <-- CHANGE: point to the central CDK app checked out inside the reusable workflow
+      # point central workflow to the central CDK app (central repo will be checked out by the reusable workflow)
       cdk-dir: 'aws-devops-repo/iac/cdk'
       stack: 'api-service-test-dev'
       aws-account: '444101352833'
       aws-region: 'us-west-2'
-      role-to-assume: 'arn:aws:iam::444101352833:role/gha-cdk-deploy-dev'
-      # if your fetch-artifact job outputs the run id, pass it here so the reusable workflow can fetch the artifact
-      artifact-run-id: ${{ needs.fetch-artifact.outputs.picked-run-id }}
+      # prefer inputs.role-to-assume if you want, otherwise keep empty and pass secret below
+      role-to-assume: ''
+      artifact-run-id: ${{ needs.pick-run.outputs.picked-run-id }}
     secrets:
+      # the reusable workflow declared this secret; supply it from repo secrets
       GITHUB_OIDC_ROLE_ARN: ${{ secrets.GITHUB_OIDC_ROLE_ARN }}
-      # keep other secrets as-is
