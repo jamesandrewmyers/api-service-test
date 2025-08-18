@@ -26,54 +26,39 @@ jobs:
     name: pick-run
     runs-on: ubuntu-latest
     outputs:
-      picked-run-id: ${{ steps.emit.outputs.picked_run_id }}
+      picked_run_id: ${{ steps.emit.outputs.picked_run_id }}
     steps:
-    - name: Debug runtime context & OIDC token (ONE-TIME)
-      run: |
-        set -euo pipefail
-        echo "== ENV INFO =="
-        echo "GITHUB_EVENT_NAME=$GITHUB_EVENT_NAME"
-        echo "GITHUB_REF=$GITHUB_REF"
-        echo "GITHUB_SHA=$GITHUB_SHA"
-        echo "GITHUB_WORKFLOW=$GITHUB_WORKFLOW"
-        echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
-        echo "GITHUB_ACTOR=$GITHUB_ACTOR"
-        echo "----"
-        echo "== GITHUB_TOKEN permissions header (as shown at job start) =="
-        # print first 20 lines of run log header area if present (best-effort)
-        sed -n '1,60p' "$GITHUB_WORKSPACE/.github/workflows/../.git/HEAD" 2>/dev/null || true
-        echo "----"
-        echo "== Workflow file (first 200 lines) that exists in workspace: .github/workflows/deploy.yml =="
-        sed -n '1,200p' .github/workflows/deploy.yml || true
-        echo "----"
-        echo "== Requesting OIDC id-token (audience=sts.amazonaws.com) and decoding sub & aud =="
-        jwt=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
-        echo "raw_jwt=$jwt" | sed -n '1,1p'
-        payload=$(echo "$jwt" | cut -d'.' -f2 || true)
-        if [ -n "$payload" ]; then
-          mod=$(( ${#payload} % 4 ))
-          if [ $mod -ne 0 ]; then payload="${payload}$(printf '=%.0s' $(seq 1 $((4-mod))))"; fi
-          echo "$payload" | tr '_-' '/+' | base64 --decode 2>/dev/null | jq '{sub: .sub, aud: .aud}' || true
-        else
-          echo "No id-token minted (empty jwt)."
-        fi
+      - name: Decide which run to deploy (minimal, deterministic)
+        id: emit
+        run: |
+          set -euo pipefail
+          PICK="${{ github.event.inputs.pick_build }}"
+          INPUT_RUN="${{ github.event.inputs.run_id }}"
+          # If 'by-run-id' and run_id provided, emit it; otherwise emit empty (meaning "use current run" fallback).
+          if [ "$PICK" = "by-run-id" ] && [ -n "$INPUT_RUN" ]; then
+            echo "picked_run_id=$INPUT_RUN" >> "$GITHUB_OUTPUT"
+          else
+            echo "picked_run_id=" >> "$GITHUB_OUTPUT"
+          fi
 
-    - name: Decide which run to deploy (minimal logic)
-      id: emit
-      run: |
-        set -euo pipefail
-        PICK="${{ github.event.inputs.pick_build }}"
-        INPUT_RUN="${{ github.event.inputs.run_id }}"
-        if [ "$PICK" = "by-run-id" ] && [ -n "$INPUT_RUN" ]; then
-          echo "::set-output name=picked_run_id::$INPUT_RUN"
-        else
-          # empty indicates "artifact live in current run"
-          echo "::set-output name=picked_run_id::"
-        fi
+  show-picked:
+    name: debug: show picked run id
+    runs-on: ubuntu-latest
+    needs: pick-run
+    steps:
+      - name: Print picked_run_id (debug)
+        run: |
+          echo "DEBUG: needs.pick-run.outputs.picked_run_id='${{ needs.pick-run.outputs.picked_run_id }}'"
+          if [ -n "${{ needs.pick-run.outputs.picked_run_id }}" ]; then
+            echo "DEBUG: will pass run id to central deploy: ${{ needs.pick-run.outputs.picked_run_id }}"
+          else
+            echo "DEBUG: picked_run_id empty -> central workflow should fallback to current run artifact"
+          fi
 
   deploy:
     name: deploy (call central)
-    needs: pick-run
+    needs: [pick-run, show-picked]
+    # call the reusable workflow in aws-devops; ensure you use @master if your trunk is master
     uses: jamesandrewmyers/aws-devops/.github/workflows/cdk-deploy-env.yml@master
     with:
       artifact-name: 'lambda-bundle'
@@ -81,10 +66,11 @@ jobs:
       stack: 'api-service-test-dev'
       aws-account: '444101352833'
       aws-region: 'us-west-2'
-      # pass role inline (you said ARNs aren't secret)
       role-to-assume: 'arn:aws:iam::444101352833:role/gha-cdk-deploy-dev'
-      artifact-run-id: ${{ needs.pick-run.outputs.picked-run_id }}
+      # forward the pick-run job output (empty string allowed)
+      artifact-run-id: ${{ needs.pick-run.outputs.picked_run_id }}
     secrets:
-      # Forward the repo-scoped token so the reusable workflow can call the Actions API
+      # forward the repo token so the reusable workflow can call the Actions API when needed
       FORWARDED_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # optional: forward OIDC role secret if you use it as fallback
       FORWARDED_OIDC_ROLE_ARN: ${{ secrets.GITHUB_OIDC_ROLE_ARN }}
