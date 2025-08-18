@@ -28,18 +28,32 @@ jobs:
     outputs:
       picked-run-id: ${{ steps.emit.outputs.picked_run_id }}
     steps:
-      - name: Decide which run to deploy (minimal logic)
-        id: emit
-        run: |
-          set -euo pipefail
-          PICK="${{ github.event.inputs.pick_build }}"
-          INPUT_RUN="${{ github.event.inputs.run_id }}"
-          if [ "$PICK" = "by-run-id" ] && [ -n "$INPUT_RUN" ]; then
-            echo "::set-output name=picked_run_id::$INPUT_RUN"
-          else
-            # empty indicates "artifact live in current run"
-            echo "::set-output name=picked_run_id::"
-          fi
+    - name: Debug: which workflow file ran and its top lines
+      run: |
+        set -euo pipefail
+        echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
+        echo "GITHUB_REF=$GITHUB_REF"
+        echo "GITHUB_SHA=$GITHUB_SHA"
+        echo "GITHUB_WORKFLOW=$GITHUB_WORKFLOW"
+        echo "Listing workflow files:"
+        ls -la .github/workflows || true
+        echo "---- BEGIN workflow file content ----"
+        # try to print the common name -> deploy.yml; if your file has different name, change it accordingly
+        sed -n '1,200p' .github/workflows/deploy.yml || true
+        echo "---- END workflow file content ----"
+
+    - name: Decide which run to deploy (minimal logic)
+      id: emit
+      run: |
+        set -euo pipefail
+        PICK="${{ github.event.inputs.pick_build }}"
+        INPUT_RUN="${{ github.event.inputs.run_id }}"
+        if [ "$PICK" = "by-run-id" ] && [ -n "$INPUT_RUN" ]; then
+          echo "::set-output name=picked_run_id::$INPUT_RUN"
+        else
+          # empty indicates "artifact live in current run"
+          echo "::set-output name=picked_run_id::"
+        fi
 
   deploy:
     name: deploy (call central)
