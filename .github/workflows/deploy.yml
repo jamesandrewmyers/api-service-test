@@ -28,7 +28,7 @@ jobs:
     outputs:
       picked-run-id: ${{ steps.emit.outputs.picked_run_id }}
     steps:
-    - name: Debug: which workflow file ran and its top lines
+    - name: "Debug: which workflow file ran and its top lines"
       run: |
         set -euo pipefail
         echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
