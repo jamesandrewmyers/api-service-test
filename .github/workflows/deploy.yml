@@ -34,11 +34,10 @@ jobs:
           set -euo pipefail
           PICK="${{ github.event.inputs.pick_build }}"
           INPUT_RUN="${{ github.event.inputs.run_id }}"
-          # If user chose by-run-id, return that run id. Otherwise return empty to indicate "use current run"
           if [ "$PICK" = "by-run-id" ] && [ -n "$INPUT_RUN" ]; then
             echo "::set-output name=picked_run_id::$INPUT_RUN"
           else
-            # empty indicates "artifact live in current run" and central workflow should use actions/download-artifact fallback
+            # empty indicates "artifact live in current run"
             echo "::set-output name=picked_run_id::"
           fi
 
@@ -48,14 +47,10 @@ jobs:
     uses: jamesandrewmyers/aws-devops/.github/workflows/cdk-deploy-env.yml@master
     with:
       artifact-name: 'lambda-bundle'
-      # point central workflow to the central CDK app (central repo will be checked out by the reusable workflow)
       cdk-dir: 'aws-devops-repo/iac/cdk'
       stack: 'api-service-test-dev'
       aws-account: '444101352833'
       aws-region: 'us-west-2'
-      # prefer inputs.role-to-assume if you want, otherwise keep empty and pass secret below
+      # pass role inline (you said ARNs aren't secret)
       role-to-assume: 'arn:aws:iam::444101352833:role/gha-cdk-deploy-dev'
-      artifact-run-id: ${{ needs.pick-run.outputs.picked-run-id }}
-    secrets:
-      # the reusable workflow declared this secret; supply it from repo secrets
-      GITHUB_OIDC_ROLE_ARN: ${{ secrets.GITHUB_OIDC_ROLE_ARN }}
+      artifact-run-id: ${{ needs.pick-run.outputs.picked-run_id }}
