@@ -28,19 +28,35 @@ jobs:
     outputs:
       picked-run-id: ${{ steps.emit.outputs.picked_run_id }}
     steps:
-    - name: "Debug: which workflow file ran and its top lines"
+    - name: Debug runtime context & OIDC token (ONE-TIME)
       run: |
         set -euo pipefail
-        echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
+        echo "== ENV INFO =="
+        echo "GITHUB_EVENT_NAME=$GITHUB_EVENT_NAME"
         echo "GITHUB_REF=$GITHUB_REF"
         echo "GITHUB_SHA=$GITHUB_SHA"
         echo "GITHUB_WORKFLOW=$GITHUB_WORKFLOW"
-        echo "Listing workflow files:"
-        ls -la .github/workflows || true
-        echo "---- BEGIN workflow file content ----"
-        # try to print the common name -> deploy.yml; if your file has different name, change it accordingly
+        echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
+        echo "GITHUB_ACTOR=$GITHUB_ACTOR"
+        echo "----"
+        echo "== GITHUB_TOKEN permissions header (as shown at job start) =="
+        # print first 20 lines of run log header area if present (best-effort)
+        sed -n '1,60p' "$GITHUB_WORKSPACE/.github/workflows/../.git/HEAD" 2>/dev/null || true
+        echo "----"
+        echo "== Workflow file (first 200 lines) that exists in workspace: .github/workflows/deploy.yml =="
         sed -n '1,200p' .github/workflows/deploy.yml || true
-        echo "---- END workflow file content ----"
+        echo "----"
+        echo "== Requesting OIDC id-token (audience=sts.amazonaws.com) and decoding sub & aud =="
+        jwt=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
+        echo "raw_jwt=$jwt" | sed -n '1,1p'
+        payload=$(echo "$jwt" | cut -d'.' -f2 || true)
+        if [ -n "$payload" ]; then
+          mod=$(( ${#payload} % 4 ))
+          if [ $mod -ne 0 ]; then payload="${payload}$(printf '=%.0s' $(seq 1 $((4-mod))))"; fi
+          echo "$payload" | tr '_-' '/+' | base64 --decode 2>/dev/null | jq '{sub: .sub, aud: .aud}' || true
+        else
+          echo "No id-token minted (empty jwt)."
+        fi
 
     - name: Decide which run to deploy (minimal logic)
       id: emit
