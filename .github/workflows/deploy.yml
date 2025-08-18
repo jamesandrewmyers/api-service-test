@@ -42,7 +42,7 @@ jobs:
           fi
 
   show-picked:
-    name: debug: show picked run id
+    name: debug show picked run id
     runs-on: ubuntu-latest
     needs: pick-run
     steps:
