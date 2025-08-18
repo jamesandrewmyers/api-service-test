@@ -86,4 +86,5 @@ jobs:
       artifact-run-id: ${{ needs.pick-run.outputs.picked-run_id }}
     secrets:
       # Forward the repo-scoped token so the reusable workflow can call the Actions API
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FORWARDED_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FORWARDED_OIDC_ROLE_ARN: ${{ secrets.GITHUB_OIDC_ROLE_ARN }}
