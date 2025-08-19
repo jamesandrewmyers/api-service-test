@@ -62,7 +62,7 @@ jobs:
     uses: jamesandrewmyers/aws-devops/.github/workflows/cdk-deploy-env.yml@master
     with:
       artifact-name: 'lambda-bundle'
-      cdk-dir: 'aws-devops-repo/iac/cdk'
+      cdk-dir: 'cdk'
       stack: 'api-service-test-dev'
       aws-account: '444101352833'
       aws-region: 'us-west-2'
