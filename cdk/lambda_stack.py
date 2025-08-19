@@ -13,5 +13,5 @@ class LambdaStack(Stack):
             "MyLambda",
             runtime=_lambda.Runtime.PYTHON_3_11,
             handler="lambda_function.lambda_handler",  # file:function
-            code=_lambda.Code.from_asset("./"),
+            code=_lambda.Code.from_asset("./", {exclude: ['cdk.out', 'cdk*']}),
         )
